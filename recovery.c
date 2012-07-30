@@ -60,6 +60,7 @@ static const struct option OPTIONS[] = {
 };
 
 static const char *COMMAND_FILE = "/cache/recovery/command";
+static const char *COMMAND_FILE_SD = "/sdcard/recovery/command";
 static const char *INTENT_FILE = "/cache/recovery/intent";
 static const char *LOG_FILE = "/cache/recovery/log";
 static const char *LAST_LOG_FILE = "/cache/recovery/last_log";
@@ -147,7 +148,7 @@ fopen_path(const char *path, const char *mode) {
     if (strchr("wa", mode[0])) dirCreateHierarchy(path, 0777, NULL, 1, sehandle);
 
     FILE *fp = fopen(path, mode);
-    if (fp == NULL && path != COMMAND_FILE) LOGE("Can't open %s\n", path);
+    if (fp == NULL && path != COMMAND_FILE && path != COMMAND_FILE_SD) LOGE("Can't open %s\n", path);
     return fp;
 }
 
@@ -214,6 +215,25 @@ get_args(int *argc, char ***argv) {
 
             check_and_fclose(fp, COMMAND_FILE);
             LOGI("Got arguments from %s\n", COMMAND_FILE);
+        }
+    }
+
+    // --- if that doesn't work, try the command file from the sdcard
+    if (*argc <= 1) {
+        FILE *fp = fopen_path(COMMAND_FILE_SD, "r");
+        if (fp != NULL) {
+            char *argv0 = (*argv)[0];
+            *argv = (char **) malloc(sizeof(char *) * MAX_ARGS);
+            (*argv)[0] = argv0;  // use the same program name
+
+            char buf[MAX_ARG_LENGTH];
+            for (*argc = 1; *argc < MAX_ARGS; ++*argc) {
+                if (!fgets(buf, sizeof(buf), fp)) break;
+                (*argv)[*argc] = strdup(strtok(buf, "\r\n"));  // Strip newline.
+            }
+
+            check_and_fclose(fp, COMMAND_FILE_SD);
+            LOGI("Got arguments from %s\n", COMMAND_FILE_SD);
         }
     }
 
@@ -297,6 +317,10 @@ finish_recovery(const char *send_intent) {
     if (ensure_path_mounted(COMMAND_FILE) != 0 ||
         (unlink(COMMAND_FILE) && errno != ENOENT)) {
         LOGW("Can't unlink %s\n", COMMAND_FILE);
+    }
+    if (ensure_path_mounted(COMMAND_FILE_SD) != 0 ||
+        (unlink(COMMAND_FILE_SD) && errno != ENOENT)) {
+        LOGW("Can't unlink %s\n", COMMAND_FILE_SD);
     }
 
     sync();  // For good measure.
